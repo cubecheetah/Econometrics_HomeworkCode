@@ -1,0 +1,236 @@
+
+#1: country name
+#2: Income Group classification (high income/  Upper-middle income/ Lower-middle income/ low income( nominal variable)
+#3: Continent ( Africa;Europe, south-north America, Asia, Oceania) (nominal variable)
+#4: PISA: Mean performance on the reading scale. Female 
+#5: PISA: Mean performance on the reading scale. Male
+#6: PISA: Mean performance on the science scale 
+#7: Unemployment with advanced education (% of total labor force with advanced education), which is an indicator of the education system's general well-being.
+#8: Compulsory education, duration (years)
+#9: GDP per capita (current US$) 
+#10: Unemployment with intermediate education (% of total labor force with intermediate education) 
+#11: Government expenditure on education, total (% of government expenditure)
+#12: High-technology exports (current US$) 
+#13: Current health expenditure (% of GDP)
+
+```{r}
+library(readr)
+library(readxl)
+
+setwd("/Users/sn.lili/")
+PISA <- read_excel("datasethomework.xlsx")
+View(PISA)
+str(PISA)
+```
+
+Here we can see that the Compulsory education duration is considered as a nominal variabble  while it is numeric,
+it should be converted.
+
+```{r}
+PISA$CompulsDur <- as.numeric(PISA$CompulsDur)
+PISA$InEurope <- as.logical(PISA$InEurope)
+PISA$CountryName <- as.factor(PISA$CountryName)
+PISA$IncomeGroup <- as.factor(PISA$IncomeGroup)
+PISA$Continent <- as.factor(PISA$Continent)
+levels(PISA$CountryName)
+levels(PISA$IncomeGroup)
+levels(PISA$Continent)
+```
+
+The nominal variables were transformed to factors.
+Descriptive statistics of the Science variable, which will be the dependent variable:
+
+```{r}
+library(psych) 
+library(moments)
+mean(PISA$Science)
+median(PISA$Science)
+quantile(PISA$Science , prob=c(0.01,0.05,0.25,0.5,0.75,0.95,0.99))
+var(PISA$Science)
+sd(PISA$Science)  
+kurtosis(PISA$Science)
+skewness(PISA$Science)
+
+# The other variables:
+describe(PISA, type=1)
+```
+
+Data visualization, determining if it is fit for analysis:
+
+```{r}
+library(ggplot2)
+boxplot(PISA$Science) #no outliers
+boxplot(PISA$CompulsDur) #no outliers
+boxplot(PISA$HealthExp) # 1 outlier
+
+ggplot(data=PISA, mapping=aes(x=Science))+
+  geom_histogram(bins=20)
+
+```
+
+As we can see, there are some missing values for some of our explanatory variables
+Now we will use the mean of the given variables instead of them (the extremes won't change, the mean will be preserved, and deletion would result in bias):
+
+```{r}
+PISA$HealthExp[is.na(PISA$HealthExp)] <- mean(PISA$HealthExp, na.rm = TRUE)
+PISA$TechExports[is.na(PISA$TechExports)] <- mean(PISA$TechExports, na.rm = TRUE)
+PISA$ExpendEduc[is.na(PISA$ExpendEduc)] <- mean(PISA$ExpendEduc, na.rm = TRUE)
+PISA$UnempInter[is.na(PISA$UnempInter)] <- mean(PISA$UnempInter, na.rm = TRUE)
+PISA$UnempAdv[is.na(PISA$UnempAdv)] <- mean(PISA$UnempAdv, na.rm = TRUE)
+PISA$UnempAdv[is.na(PISA$CompulsDur)] <- mean(PISA$CompulsDur, na.rm = TRUE)
+View(PISA)
+```
+
+Correlation between the variables:
+
+```{r}
+cor(PISA$Science, PISA$ReadingFemale)
+cor(PISA$Science, PISA$ReadingMale)
+library(corrplot)
+correl <- PISA[5:14]
+cor <- cor(correl)
+corrplot(cor, method = "color")
+```
+
+According to the corrplot and the OLS assumptions, ReadingFemale and ReadingMale cannot be included in the model, due to the correlation.
+Also, there is high correlation between UnempAdv and Inter, so only one of them will be included in the analysis.
+
+```{r}
+ggplot(data=PISA, aes(x=Science, y=ExpendEduc))+
+  geom_point()+
+  stat_smooth(method=lm)
+```
+There is a negative correlation between PISA Science scores and education expenditures.
+
+```{r}
+model1 <- lm(Science ~ IncomeGroup + InEurope+ Continent + UnempAdv + CompulsDur+GDPPerCapita  + UnempInter+ ExpendEduc+TechExports + HealthExp, data = PISA)
+summary(model1)
+
+# We accept the H0 that the model is well-specified based on the p-value.
+```
+
+The variables that are significant on all common significance levels are: Income group, InEurope, Compulsory education duration, and Continent.
+p-value: empirical significance level, lowest probability that we can reject the H0. It is really small in this case.
+Standard error: shows volatility of the betas, it is 29.72 in this case.
+Interpretation of variables:
+
+If a country is lower-middle income, that means that it will have 3.851e+01 times less points on the PISA Science test on average, ceteris paribus. (ref. category: high income)
+If a country is upper-middle income, that means that it will have 2.130e+01 times less points on the PISA Science test on average, ceteris paribus.
+
+The distribution of the variables:
+
+```{r}
+hist(PISA$CompulsDur) 
+hist(PISA$UnempAdv) # we need to take the logarithm!
+hist(PISA$GDPPerCapita)
+hist(log(PISA$GDPPerCapita)) #That distribution is more useful
+hist(PISA$ExpendEduc) # normal distribution
+hist(PISA$HealthExp)
+```
+
+Building the second model:
+
+```{r}
+model2 <- lm(Science ~ IncomeGroup, data = PISA)
+summary(model2)
+model2 <- lm(Science ~ IncomeGroup + CompulsDur, data = PISA)
+summary(model2)
+model2 <- lm(Science ~ IncomeGroup + CompulsDur + ExpendEduc, data = PISA)
+summary(model2)
+model2 <- lm(Science ~ IncomeGroup + CompulsDur + ExpendEduc + log(GDPPerCapita), data = PISA)
+summary(model2) # Now the explanatory power is higher, but some variables are insignificant
+model2 <- lm(Science ~ IncomeGroup + CompulsDur + ExpendEduc + log(GDPPerCapita) + log(UnempAdv) , data = PISA)
+summary(model2)
+model2 <- lm(Science ~ IncomeGroup + CompulsDur + ExpendEduc + log(GDPPerCapita) + log(UnempAdv) + Continent + HealthExp, data = PISA)
+summary(model2)
+summary(model1)
+
+anova(model1, model2)
+```
+
+Now education expenditure is insignificant. 
+
+```{r}
+AIC(model1,model2) 
+BIC(model1,model2)
+```
+Fitted values:
+```{r}
+PISA$fitted <- model1$fitted.values
+```
+
+F-test:
+```{r}
+m <- length(coef(model1))-length(coef(model2))
+q <- length(coef(model2))
+n <- nrow(PISA)
+model1_sum<-summary(model1)
+model2_sum<-summary(model2)
+
+Rsquare_1 <- model1_sum$r.squared #Unrestricted
+Rsquare_2 <- model2_sum$r.squared #Restricted
+
+#F-test
+teststat <- ((Rsquare_1-Rsquare_2)/m)/((1-Rsquare_1)/(n-q-m))
+
+# p-value
+1-pf(teststat, m, n-q-m)
+```
+VIF value
+
+
+```{r}
+library(car)
+vif(model2) 
+# interpretation of VIF values: The VIF is highest for Continent and Incomegroup and log GDPPerCapita, but it does not exceed 5.
+
+Tol<- 1/vif(model2)[3]
+Tol
+```
+
+The Tolerance is 0.71366, which is a measure that assesses multicollinearity as well. A lower value indicates higher multicollinearity, which would violate the OLS assumptions. This is an acceptable value.
+
+
+
+```{r}
+library(ggplot2)
+ggplot(PISA, aes(x=UnempAdv, y= Science)) +
+  geom_point() + geom_smooth(method = lm)
+
+
+ggplot(PISA, aes(x=UnempAdv, y=log(Science))) +
+  geom_point() + geom_smooth(method = lm)
+
+logmodel<-lm( log(Science) ~ UnempAdv + ExpendEduc +HealthExp + ExpendEduc+ TechExports    , data = PISA)
+summary(logmodel)
+
+# model selection: based on R-squared we choose the basic model
+```
+
+Heteroskedasticity
+
+```{r}
+PISA$Residuals <- model2$residuals  #Saving the residuals
+PISA$Residuals2 <- model2$residuals^2  #Saving the squared residuals
+PISA$Yestimate<- model2$fitted.values   #Saving the estimated values
+
+ggplot(PISA1, aes(x=Yestimate, y=Residuals2)) + geom_point()
+```
+H0: model is homoskedastic
+
+```{r}
+library(skedastic)
+#We should use the white_lm function for this:
+white_basic <- white_lm(model2, interactions = FALSE)
+#Test statistic
+white_basic$statistic
+#p value
+white_basic$p.value
+# The p value is 0.1 (a value below 0.05 would be ideal), we reject the H0 at every common significance level:
+# Our model is heteroskedastic (as we expected based on the plots)
+```
+
+Handling:
+We calculate the standard errors in a way that they will be robust to the heteroskedasticity.
+We can calculate these standard errors and the associated t tests and p values.
+
